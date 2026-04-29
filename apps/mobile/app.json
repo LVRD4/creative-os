@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Creative OS",
+    "slug": "creative-os",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0A0A0A"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.creativeos.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Creative OS needs the microphone to record studio sessions."
+      }
+    },
+    "android": {
+      "package": "com.creativeos.app",
+      "permissions": ["RECORD_AUDIO"]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Creative OS needs the microphone to record studio sessions."
+        }
+      ]
+    ],
+    "scheme": "creative-os",
+    "extra": {
+      "router": { "origin": false },
+      "eas": { "projectId": "your-eas-project-id" }
+    }
+  }
+}

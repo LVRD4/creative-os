@@ -1,0 +1,10 @@
+{
+  "name": "creative-os",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "mobile": "cd apps/mobile && npx expo start",
+    "web": "cd apps/web && next dev",
+    "setup": "npm install"
+  }
+}
