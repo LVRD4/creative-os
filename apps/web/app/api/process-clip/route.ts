@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI, { toFile } from 'openai';
+import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 
 export const maxDuration = 300;
@@ -29,15 +29,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to download audio' }, { status: 500 });
     }
     const audioBuffer = await audioResponse.arrayBuffer();
-    const audioFile = await toFile(Buffer.from(audioBuffer), 'session.m4a', { type: 'audio/m4a' });
+    const bytes = new Uint8Array(audioBuffer.slice(0, 12));
 
-    // Transcribe with Whisper
-    const transcription = await openai.audio.transcriptions.create({
-      file: audioFile,
-      model: 'whisper-1',
-      response_format: 'verbose_json',
-      timestamp_granularities: ['segment'],
+    // Detect actual format from magic bytes
+    const isWav = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
+    const isMp3 = (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) || (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33);
+    const isMp4 = bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70;
+
+    const ext = isWav ? 'wav' : isMp3 ? 'mp3' : isMp4 ? 'mp4' : 'mp4';
+    const mimeType = isWav ? 'audio/wav' : isMp3 ? 'audio/mpeg' : 'audio/mp4';
+
+    console.log(`Audio: ${audioBuffer.byteLength} bytes, detected=${ext}, header=${Array.from(bytes.slice(0,8)).map(b=>b.toString(16).padStart(2,'0')).join(' ')}`);
+
+    // Use raw fetch — more reliable than SDK in serverless for binary uploads
+    const formData = new FormData();
+    formData.append('file', new Blob([audioBuffer], { type: mimeType }), `session.${ext}`);
+    formData.append('model', 'whisper-1');
+    formData.append('response_format', 'verbose_json');
+    formData.append('timestamp_granularities[]', 'segment');
+
+    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: formData,
     });
+
+    if (!whisperRes.ok) {
+      const errText = await whisperRes.text();
+      console.error('Whisper error:', whisperRes.status, errText);
+      throw new Error(`Whisper ${whisperRes.status}: ${errText}`);
+    }
+
+    const transcription = await whisperRes.json();
 
     const stampContext = stamps?.length
       ? `\nUser marked these moments during recording (timestamps in seconds): ${JSON.stringify(stamps)}`
