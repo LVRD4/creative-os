@@ -4,9 +4,12 @@
     "slug": "creative-os",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/images/icon.png",
+    "scheme": "creative-os",
     "userInterfaceStyle": "dark",
     "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
       "backgroundColor": "#0A0A0A"
     },
     "ios": {
@@ -18,21 +21,26 @@
     },
     "android": {
       "package": "com.creativeos.app",
-      "permissions": ["RECORD_AUDIO"]
+      "permissions": [
+        "RECORD_AUDIO"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#0A0A0A"
+      }
     },
     "plugins": [
       "expo-router",
       [
-        "expo-av",
+        "expo-audio",
         {
           "microphonePermission": "Creative OS needs the microphone to record studio sessions."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
-    "scheme": "creative-os",
-    "extra": {
-      "router": { "origin": false },
-      "eas": { "projectId": "your-eas-project-id" }
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }

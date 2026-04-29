@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 import { createClient } from '@supabase/supabase-js';
 
 export const maxDuration = 300;
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to download audio' }, { status: 500 });
     }
     const audioBuffer = await audioResponse.arrayBuffer();
-    const audioFile = new File([audioBuffer], 'session.m4a', { type: 'audio/m4a' });
+    const audioFile = await toFile(Buffer.from(audioBuffer), 'session.m4a', { type: 'audio/m4a' });
 
     // Transcribe with Whisper
     const transcription = await openai.audio.transcriptions.create({
