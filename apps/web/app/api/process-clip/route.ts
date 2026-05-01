@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
-import { writeFileSync, createReadStream, unlinkSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
 
 export const maxDuration = 300;
 
@@ -53,21 +50,51 @@ export async function POST(req: NextRequest) {
     const ext = isWav ? 'wav' : isMp3 ? 'mp3' : isMp4 ? 'mp4' : 'm4a';
     const mimeType = isWav ? 'audio/wav' : isMp3 ? 'audio/mpeg' : 'audio/mp4';
 
-    // Write to /tmp and stream — the only reliable binary multipart approach in Node.js serverless
-    const tmpPath = join(tmpdir(), `audio_${Date.now()}_${sessionId}.${ext}`);
-    writeFileSync(tmpPath, Buffer.from(audioBuffer));
+    // Manually construct multipart/form-data body using Node.js Buffers.
+    // Web FormData+Blob and OpenAI SDK file handling both corrupt binary in
+    // Next.js serverless. Buffer.concat is the only encoding-safe path.
+    const boundary = `AudioBoundary${Date.now()}`;
+    const CRLF = '\r\n';
 
-    let transcription: any;
-    try {
-      transcription = await openai.audio.transcriptions.create({
-        file: createReadStream(tmpPath) as any,
-        model: 'whisper-1',
-        response_format: 'verbose_json',
-        timestamp_granularities: ['segment'],
-      });
-    } finally {
-      try { unlinkSync(tmpPath); } catch {}
+    const textPart = (name: string, value: string) =>
+      Buffer.from(
+        `--${boundary}${CRLF}Content-Disposition: form-data; name="${name}"${CRLF}${CRLF}${value}${CRLF}`,
+        'utf8'
+      );
+
+    const audioBytes = Buffer.from(audioBuffer);
+    const fileHeader = Buffer.from(
+      `--${boundary}${CRLF}Content-Disposition: form-data; name="file"; filename="audio.m4a"${CRLF}Content-Type: audio/mp4${CRLF}${CRLF}`,
+      'utf8'
+    );
+
+    const multipartBody = Buffer.concat([
+      textPart('model', 'whisper-1'),
+      textPart('response_format', 'verbose_json'),
+      textPart('timestamp_granularities[]', 'segment'),
+      fileHeader,
+      audioBytes,
+      Buffer.from(`${CRLF}--${boundary}--${CRLF}`, 'utf8'),
+    ]);
+
+    console.error(`WHISPER_DEBUG sending ${multipartBody.byteLength} bytes, audio=${audioBytes.byteLength}`);
+
+    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      },
+      body: multipartBody,
+    });
+
+    if (!whisperRes.ok) {
+      const errText = await whisperRes.text();
+      console.error('Whisper error:', whisperRes.status, errText);
+      throw new Error(`Whisper ${whisperRes.status}: ${errText}`);
     }
+
+    const transcription = await whisperRes.json();
 
     const stampContext = stamps?.length
       ? `\nUser marked these moments during recording (timestamps in seconds): ${JSON.stringify(stamps)}`
