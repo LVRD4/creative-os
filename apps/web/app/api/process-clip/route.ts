@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
+import { writeFileSync, createReadStream, unlinkSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
 export const maxDuration = 300;
 
@@ -50,26 +53,21 @@ export async function POST(req: NextRequest) {
     const ext = isWav ? 'wav' : isMp3 ? 'mp3' : isMp4 ? 'mp4' : 'm4a';
     const mimeType = isWav ? 'audio/wav' : isMp3 ? 'audio/mpeg' : 'audio/mp4';
 
-    // Use raw fetch — more reliable than SDK in serverless for binary uploads
-    const formData = new FormData();
-    formData.append('file', new Blob([audioBuffer], { type: mimeType }), `session.${ext}`);
-    formData.append('model', 'whisper-1');
-    formData.append('response_format', 'verbose_json');
-    formData.append('timestamp_granularities[]', 'segment');
+    // Write to /tmp and stream — the only reliable binary multipart approach in Node.js serverless
+    const tmpPath = join(tmpdir(), `audio_${Date.now()}_${sessionId}.${ext}`);
+    writeFileSync(tmpPath, Buffer.from(audioBuffer));
 
-    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-      body: formData,
-    });
-
-    if (!whisperRes.ok) {
-      const errText = await whisperRes.text();
-      console.error('Whisper error:', whisperRes.status, errText);
-      throw new Error(`Whisper ${whisperRes.status}: ${errText}`);
+    let transcription: any;
+    try {
+      transcription = await openai.audio.transcriptions.create({
+        file: createReadStream(tmpPath) as any,
+        model: 'whisper-1',
+        response_format: 'verbose_json',
+        timestamp_granularities: ['segment'],
+      });
+    } finally {
+      try { unlinkSync(tmpPath); } catch {}
     }
-
-    const transcription = await whisperRes.json();
 
     const stampContext = stamps?.length
       ? `\nUser marked these moments during recording (timestamps in seconds): ${JSON.stringify(stamps)}`
