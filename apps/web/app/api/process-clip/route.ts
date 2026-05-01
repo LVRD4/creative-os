@@ -29,17 +29,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to download audio' }, { status: 500 });
     }
     const audioBuffer = await audioResponse.arrayBuffer();
-    const bytes = new Uint8Array(audioBuffer.slice(0, 12));
+    const bytes = new Uint8Array(audioBuffer.slice(0, 16));
+    const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    const ascii = Array.from(bytes).map(b => b >= 32 && b < 127 ? String.fromCharCode(b) : '.').join('');
 
     // Detect actual format from magic bytes
     const isWav = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
     const isMp3 = (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) || (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33);
     const isMp4 = bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70;
+    const isCaf = bytes[0] === 0x63 && bytes[1] === 0x61 && bytes[2] === 0x66 && bytes[3] === 0x66;
 
-    const ext = isWav ? 'wav' : isMp3 ? 'mp3' : isMp4 ? 'mp4' : 'mp4';
+    console.error(`AUDIO_DEBUG size=${audioBuffer.byteLength} wav=${isWav} mp3=${isMp3} mp4=${isMp4} caf=${isCaf}`);
+    console.error(`AUDIO_DEBUG hex: ${hex}`);
+    console.error(`AUDIO_DEBUG ascii: ${ascii}`);
+
+    if (isCaf) {
+      return NextResponse.json({ error: 'iOS recorded in CAF format. This is a known Expo Go limitation — please test with a development build instead, or we can add server-side conversion.' }, { status: 422 });
+    }
+
+    const ext = isWav ? 'wav' : isMp3 ? 'mp3' : isMp4 ? 'mp4' : 'm4a';
     const mimeType = isWav ? 'audio/wav' : isMp3 ? 'audio/mpeg' : 'audio/mp4';
-
-    console.log(`Audio: ${audioBuffer.byteLength} bytes, detected=${ext}, header=${Array.from(bytes.slice(0,8)).map(b=>b.toString(16).padStart(2,'0')).join(' ')}`);
 
     // Use raw fetch — more reliable than SDK in serverless for binary uploads
     const formData = new FormData();
