@@ -148,11 +148,14 @@ Full transcript: ${transcription.text}`,
 
     const recap = recapResponse.choices[0].message.content ?? '';
 
-    // Save everything to Supabase
+    // Save everything to Supabase — use .select() to get back rows with IDs
+    let savedClips = clips;
     if (clips.length > 0) {
-      await supabase
+      const { data } = await supabase
         .from('clips')
-        .insert(clips.map((c) => ({ ...c, session_id: sessionId })));
+        .insert(clips.map((c) => ({ ...c, session_id: sessionId })))
+        .select();
+      if (data) savedClips = data;
     }
 
     await supabase
@@ -160,7 +163,7 @@ Full transcript: ${transcription.text}`,
       .update({ recap, duration_seconds: duration, status: 'done', updated_at: new Date().toISOString() })
       .eq('id', sessionId);
 
-    return NextResponse.json({ clips, recap });
+    return NextResponse.json({ clips: savedClips, recap });
   } catch (err: any) {
     console.error('process-clip error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
